@@ -48,8 +48,8 @@ constructor(
   }
 
 
- async update(id: number, UpdateMissionDto: UpdateMissionDto){
-    await this.missionRepository.update(id, UpdateMissionDto);
+ async update(id: number, updateMissionDto: UpdateMissionDto){
+    await this.missionRepository.update(id, updateMissionDto);
     return this.findOne(id);
  }
 

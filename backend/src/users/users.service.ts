@@ -36,13 +36,11 @@ export class UsersService {
 
   // 3. Lógica de Subida de Nivel (Level Up) 🧠
   // Fórmula: Cada nivel cuesta 100 puntos * Nivel Actual
-  // Nivel 1 -> Pide 100 XP
-  // Nivel 2 -> Pide 200 XP
   const xpToNextLevel = user.level * 100; 
 
   if (user.currentXp >= xpToNextLevel) {
     user.level++; 
-    user.currentXp = user.currentXp - xpToNextLevel; // Reseteamos la barra (guardando el sobrante)
+    user.currentXp = user.currentXp - xpToNextLevel; // Reseteamos la barra
     leveledUp = true;
   }
 
