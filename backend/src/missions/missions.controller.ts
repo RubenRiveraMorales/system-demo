@@ -17,7 +17,7 @@ export class MissionsController {
   @UseGuards(AuthGuard('jwt'))
   @Get()
   findAll(@Request() req) {
-    return this.missionsService.findAll(req.user);
+    return this.missionsService.getTodayMissions(req.user)
   }
 
   @Get(':id')

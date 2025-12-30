@@ -24,35 +24,49 @@ export class UsersService {
     return await this.usersRepository.save(newUser)
   }
 
-  async assignExperience(id: string, points: number) {
-  // 1. Buscamos al usuario
-  const user = await this.usersRepository.findOneBy({ id });
-  if (!user) {
-    throw new Error('User not found');
-  }
-  // 2. Sumamos la XP
-  user.currentXp += points;
-  let leveledUp = false;
-
-  // 3. Lógica de Subida de Nivel (Level Up) 🧠
-  // Fórmula: Cada nivel cuesta 100 puntos * Nivel Actual
-  const xpToNextLevel = user.level * 100; 
-
-  if (user.currentXp >= xpToNextLevel) {
-    user.level++; 
-    user.currentXp = user.currentXp - xpToNextLevel; // Reseteamos la barra
-    leveledUp = true;
+  private calculateXpToNextLevel(level: number): number {
+    const baseXP = 100;
+    const difficultyFactor = 1.6; // subir nivel se vuelve más difícil
+    return Math.floor(baseXP * Math.pow(level, difficultyFactor));
   }
 
-  await this.usersRepository.save(user);
+async assignExperience(id: string, points: number) {
+    // 1. Buscamos al usuario
+    const user = await this.usersRepository.findOneBy({ id });
+    if (!user) {
+      throw new Error('User not found');
+    }
 
-  return {
-    level: user.level,
-    currentXp: user.currentXp,
-    leveledUp,
-    xpEarned: points
-  };
-}
+    // 2. Sumar xp
+    user.currentXp += points;
+    let leveledUp = false;
+    let startLevel = user.level;
+
+    // 3. Bucle while
+    // Esto permite subir múltiples niveles si la XP ganada es mucha
+    while (true) {
+      const xpToNextLevel = this.calculateXpToNextLevel(user.level);
+
+      if (user.currentXp >= xpToNextLevel) {
+        user.level++;
+        user.currentXp -= xpToNextLevel;
+        leveledUp = true;
+      } else {
+        break;
+      }
+    }
+
+    await this.usersRepository.save(user);
+
+    return {
+      level: user.level,
+      currentXp: user.currentXp,
+      xpToNextLevel: this.calculateXpToNextLevel(user.level),
+      leveledUp,
+      levelsGained: user.level - startLevel,
+      xpEarned: points
+    };
+  }
 
   findAll() {
     return this.usersRepository.find();
