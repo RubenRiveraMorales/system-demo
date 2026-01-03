@@ -12,49 +12,42 @@ import { UpdateMissionDto } from './dto/update-mission.dto';
 export class MissionsService {
   constructor(
     @InjectRepository(Mission)
-    private missionRepository: Repository<Mission>, private usersService: UsersService,
+    private missionRepository: Repository<Mission>,
     @InjectRepository(MissionInstance)
     private instanceRepository: Repository<MissionInstance>,
+    private usersService: UsersService,
   ) { }
 
+  // 1. Crear Plantilla (Mission)
   async create(createMissionDto: CreateMissionDto, user: User) {
     const newMission = this.missionRepository.create({
       ...createMissionDto,
       user,
-      // Valores por defecto si no vienen
+      // Valores por defecto
       category: createMissionDto.category || MissionCategory.CUSTOM,
       recurrenceType: createMissionDto.recurrenceType || RecurrenceType.ONCE,
-      startDate: createMissionDto.startDate || new Date(), // Empieza hoy si no dicen fecha
+      startDate: createMissionDto.startDate || new Date(),
+      isGlobal: false, // Aseguramos que las creadas por API no sean globales por error
     });
     return await this.missionRepository.save(newMission);
   }
 
+  // 2. Obtener tareas de HOY (Misiones Instanciadas)
   async getTodayMissions(user: User) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    // A. Buscamos si ya existen instancias generadas para hoy
-    let instances = await this.instanceRepository.find({
+
+    // Siempre ejecutamos el generador para asegurar que estén al día (Lazy Loading)
+    await this.generateDailyInstances(user, today);
+
+    return await this.instanceRepository.find({
       where: {
         user: { id: user.id },
         scheduledDate: today
       },
-      relations: ['mission'], // Traemos datos de la plantilla (titulo, xp)
+      relations: ['mission'],
       order: { isCompleted: 'ASC', createdAt: 'DESC' }
     });
-
-    // B.(Safety Check)
-    if (instances.length === 0) {
-      await this.generateDailyInstances(user, today);
-
-      // Volvemos a buscar después de generar
-      instances = await this.instanceRepository.find({
-        where: { user: { id: user.id }, scheduledDate: today },
-        relations: ['mission'],
-        order: { isCompleted: 'ASC' }
-      });
-    }
-
-    return instances;
   }
 
   // 3. Completar una Instancia
@@ -80,16 +73,24 @@ export class MissionsService {
   private async generateDailyInstances(user: User, date: Date) {
     const dayOfWeek = date.getDay();
 
-    // 1. Traer todas las plantillas activas del usuario
+    // Traer plantillas: Mis privadas + Globales del sistema
     const missions = await this.missionRepository.find({
-      where: { user: { id: user.id }, isActive: true }
+      where: [
+        { user: { id: user.id }, isActive: true },
+        { isGlobal: true, isActive: true }
+      ]
     });
 
     for (const mission of missions) {
       if (this.shouldCreateInstance(mission, date, dayOfWeek)) {
-        // Doble check: Asegurar que no exista ya (para no duplicar si corro esto 2 veces)
+        
+        // CORRECCIÓN CRÍTICA: Verificar si existe instancia PARA ESTE USUARIO
         const exists = await this.instanceRepository.findOne({
-          where: { mission: { id: mission.id }, scheduledDate: date }
+          where: { 
+              mission: { id: mission.id }, 
+              scheduledDate: date,
+              user: { id: user.id } 
+          }
         });
 
         if (!exists) {
@@ -105,14 +106,12 @@ export class MissionsService {
     }
   }
 
-  // Lógica pura de validación de fechas
+  // Lógica de fechas
   private shouldCreateInstance(mission: Mission, date: Date, dayOfWeek: number): boolean {
-    // Validar rango de fechas global
     const dateTime = date.getTime();
     const start = mission.startDate ? new Date(mission.startDate).getTime() : 0;
     const end = mission.endDate ? new Date(mission.endDate).getTime() : Infinity;
 
-    // Nota: Las fechas string de la BD a veces necesitan conversión, TypeORM suele devolver Date objects
     if (dateTime < start) return false;
     if (mission.endDate && dateTime > end) return false;
 
@@ -121,11 +120,9 @@ export class MissionsService {
         return true;
 
       case RecurrenceType.WEEKLY:
-        // Si el array es null o vacío, no se crea
         return mission.recurrenceDays?.includes(dayOfWeek) ?? false;
 
       case RecurrenceType.ONCE:
-        // Comparamos strings de fecha (YYYY-MM-DD) para ignorar horas
         return date.toISOString().split('T')[0] === new Date(mission.startDate).toISOString().split('T')[0];
 
       default:
@@ -133,24 +130,20 @@ export class MissionsService {
     }
   }
 
-
+  // CRUD de Plantillas (Para gestión, no para jugar)
   async findAll(user: User) {
     return await this.missionRepository.find({
       where: [
         { isGlobal: true },
         { user: { id: user.id } }
       ],
-      order: {
-        createdAt: 'DESC'
-      }
+      order: { createdAt: 'DESC' }
     });
   }
-
 
   async findOne(id: number) {
     return await this.missionRepository.findOneBy({ id });
   }
-
 
   async update(id: number, updateMissionDto: UpdateMissionDto) {
     await this.missionRepository.update(id, updateMissionDto);
@@ -161,6 +154,4 @@ export class MissionsService {
     await this.missionRepository.delete(id);
     return { delete: true, message: 'Mission deleted successfully' };
   }
-
 }
-
